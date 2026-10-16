@@ -20,21 +20,33 @@ interface RequestOptions {
   body?: unknown; // a file is sent as it is; anything else is sent as JSON
 }
 
-export async function request<T>(path: string, { method = "GET", body }: RequestOptions = {}): Promise<T> {
+export async function request<T>(
+  path: string,
+  { method = "GET", body }: RequestOptions = {},
+): Promise<T> {
   const isJson = body !== undefined && !(body instanceof Blob);
   const res = await fetch(`${BASE}/api${path}`, {
     method,
     credentials: "include", // send the admin login cookie
-    headers: isJson ? { "Content-Type": "application/json" } : undefined,
+    // X-RLC-App marks the request as coming from this app; the server answers 404 without it,
+    // so /api addresses typed into the browser's address bar show nothing.
+    headers: {
+      "X-RLC-App": "1",
+      ...(isJson && { "Content-Type": "application/json" }),
+    },
     body: isJson ? JSON.stringify(body) : (body as Blob | undefined),
   });
   if (!res.ok) {
     const data: { error?: string } = await res.json().catch(() => ({}));
-    throw new ApiError(data.error ?? `Request failed (${res.status})`, res.status);
+    throw new ApiError(
+      data.error ?? `Request failed (${res.status})`,
+      res.status,
+    );
   }
   // 204 No Content (after a delete) has no body to read.
   return (res.status === 204 ? undefined : res.json()) as Promise<T>;
 }
 
 // Uploads kept on the server itself have links like "/uploads/x.png"; Cloudinary links are complete.
-export const mediaUrl = (url: string) => (url.startsWith("/") ? BASE + url : url);
+export const mediaUrl = (url: string) =>
+  url.startsWith("/") ? BASE + url : url;

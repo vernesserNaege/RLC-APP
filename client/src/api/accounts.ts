@@ -1,5 +1,5 @@
-// Teacher accounts (main admin only).
-import type { Account } from "../types";
+// Staff accounts (admins only).
+import type { Account, Role } from "../types";
 import { request } from "./client";
 
 const accountPath = (id: string) => `/admin/accounts/${encodeURIComponent(id)}`;
@@ -16,6 +16,13 @@ export const setAccountPassword = (id: string, password: string) =>
   request<{ ok: true }>(`${accountPath(id)}/password`, {
     method: "PUT",
     body: { password },
+  });
+
+// Make a teacher an admin, or an admin a teacher again.
+export const setAccountRole = (id: string, role: Role) =>
+  request<Account>(`${accountPath(id)}/role`, {
+    method: "PUT",
+    body: { role },
   });
 
 export const deleteAccount = (id: string) =>

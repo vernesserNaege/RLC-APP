@@ -1,5 +1,6 @@
-// Teacher accounts: only the main admin can see, create, reset or delete them.
+// Staff accounts: only admins can see, create, reset, promote or delete them.
 // This is the only way to make an account, so students cannot sign themselves up.
+// New accounts start as teachers; an admin can then make them admins too.
 import { Router } from "express";
 import { hashPassword, isMainAdminName } from "../auth.js";
 import { query } from "../db.js";
@@ -8,6 +9,7 @@ const router = Router();
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const USERNAME = /^[a-z0-9._-]{3,30}$/i; // 3 to 30 letters, numbers, dots, dashes or underscores
 const MIN_PASSWORD = 8;
+const ROLES = ["teacher", "admin"];
 
 const notFound = (res) => res.status(404).json({ error: "Account not found" });
 router.param("id", (req, res, next, id) => (UUID.test(id) ? next() : notFound(res)));
@@ -17,9 +19,12 @@ const passwordProblem = (password) =>
     ? `The password must be at least ${MIN_PASSWORD} characters.`
     : null;
 
-const ACCOUNT_COLUMNS = `id, username, display_name AS "displayName", created_at AS "createdAt"`;
+const ACCOUNT_COLUMNS = `id, username, display_name AS "displayName", role, created_at AS "createdAt"`;
 
-// GET /api/admin/accounts -> every teacher account (never the password hashes)
+// Nobody can change their own role or delete themselves, so an admin can't lock themselves out.
+const isSelf = (req) => req.params.id === req.user.id;
+
+// GET /api/admin/accounts -> every staff account (never the password hashes)
 router.get("/", async (req, res) => {
   const { rows } = await query(`SELECT ${ACCOUNT_COLUMNS} FROM users ORDER BY lower(display_name), lower(username)`);
   res.json(rows);
@@ -65,8 +70,23 @@ router.put("/:id/password", async (req, res) => {
   res.json({ ok: true });
 });
 
-// DELETE /api/admin/accounts/:id -> remove the account; that teacher is logged out at once
+// PUT /api/admin/accounts/:id/role  { role: "teacher" | "admin" } -> promote or demote
+router.put("/:id/role", async (req, res) => {
+  const { role } = req.body ?? {};
+  if (!ROLES.includes(role)) return res.status(400).json({ error: "Role must be teacher or admin." });
+  if (isSelf(req)) return res.status(400).json({ error: "You can't change your own role." });
+
+  const { rows } = await query(`UPDATE users SET role = $2 WHERE id = $1 RETURNING ${ACCOUNT_COLUMNS}`, [
+    req.params.id,
+    role,
+  ]);
+  if (rows.length === 0) return notFound(res);
+  res.json(rows[0]);
+});
+
+// DELETE /api/admin/accounts/:id -> remove the account; that person is logged out at once
 router.delete("/:id", async (req, res) => {
+  if (isSelf(req)) return res.status(400).json({ error: "You can't delete your own account." });
   const { rowCount } = await query("DELETE FROM users WHERE id = $1", [req.params.id]);
   if (rowCount === 0) return notFound(res);
   res.sendStatus(204);

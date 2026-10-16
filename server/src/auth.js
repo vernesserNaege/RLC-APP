@@ -1,4 +1,5 @@
-// Login helpers for the main admin (.env) and the teacher accounts (users table).
+// Login helpers for the main admin (.env) and the staff accounts (users table).
+// Every account has a role: "teacher" (manages modules) or "admin" (also manages accounts).
 // Uses only Node's built-in crypto module, so no extra packages.
 import { createHmac, randomBytes, scrypt, timingSafeEqual } from "node:crypto";
 import { promisify } from "node:util";
@@ -61,24 +62,25 @@ export async function checkLogin(username, password) {
     return (await verifyPassword(password, process.env.ADMIN_PASSWORD_HASH)) ? mainAdmin() : null;
   }
   const { rows } = await query(
-    `SELECT id, username, display_name AS "displayName", password_hash AS "hash"
+    `SELECT id, username, display_name AS "displayName", role, password_hash AS "hash"
      FROM users WHERE lower(username) = lower($1)`,
     [username],
   );
-  const user = rows[0];
-  const ok = await verifyPassword(password, user?.hash ?? DUMMY_HASH);
-  return user && ok ? { id: user.id, username: user.username, displayName: user.displayName, role: "teacher" } : null;
+  const { hash, ...user } = rows[0] ?? {};
+  const ok = await verifyPassword(password, hash ?? DUMMY_HASH);
+  return rows[0] && ok ? user : null; // never send the hash back
 }
 
-// The account behind a session, read fresh each time, so a deleted teacher is locked out at once.
+// The account behind a session, read fresh each time, so a deleted account is locked out at once
+// and a new role (teacher <-> admin) applies on the very next click.
 async function findAccount(id) {
   if (id === ADMIN_ID) return mainAdmin();
   if (!UUID.test(id ?? "")) return null;
   const { rows } = await query(
-    `SELECT id, username, display_name AS "displayName" FROM users WHERE id = $1`,
+    `SELECT id, username, display_name AS "displayName", role FROM users WHERE id = $1`,
     [id],
   );
-  return rows[0] ? { ...rows[0], role: "teacher" } : null;
+  return rows[0] ?? null;
 }
 
 // ---- Session token: "<data>.<signature>", data = { sub: account id, exp: expiry time } ----
@@ -125,7 +127,7 @@ export async function requireLogin(req, res, next) {
   next();
 }
 
-// Only the main admin. Use after requireLogin.
+// Admins only: the main admin and any account made an admin. Use after requireLogin.
 export function requireAdmin(req, res, next) {
   if (req.user?.role === "admin") return next();
   res.status(403).json({ error: "Only the admin can do this." });

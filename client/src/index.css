@@ -20,7 +20,6 @@
   /* Dashboard chart colours, checked with a colour-blindness validator:
      clearly different for all common types of colour blindness, and 3:1 or more on white. */
   --chart-published: #1f4fbf; /* brand blue */
-  --chart-draft: #c98500; /* deeper gold (the brand gold is too light for chart bars) */
   --chart-archived: #8c84c8; /* muted violet */
 
   --font: "Lexend Variable", "Lexend", "Segoe UI", system-ui, sans-serif;
@@ -912,17 +911,47 @@ input {
   text-transform: capitalize;
 }
 
-.status-published {
-  background: var(--blue-tint);
-  color: var(--blue);
+.status-published { background: var(--blue-tint); color: var(--blue); }
+.status-archived { background: #eeecf8; color: #5b52a3; }
+
+/* Account roles on the Accounts page */
+.role-admin { background: var(--navy); color: #fff; }
+.role-teacher { background: var(--blue-tint); color: var(--blue); }
+
+.you-tag {
+  color: var(--muted);
+  font-size: 13px;
 }
-.status-draft {
+
+/* Editor: published and archived modules open read-only */
+.editor-fieldset {
+  min-width: 0; /* fieldsets don't shrink on phones without this */
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+/* Read-only: hide the buttons that change the module (add, move, remove, upload) */
+.editor-fieldset:disabled .editor-add,
+.editor-fieldset:disabled .item-controls,
+.editor-fieldset:disabled .media-actions {
+  display: none;
+}
+
+.editor-locked {
+  margin-bottom: 16px;
+  padding: 12px 16px;
   background: var(--gold-tint);
+  border-left: 4px solid var(--gold);
+  border-radius: var(--radius-sm);
   color: var(--gold-ink);
+  font-size: 15px;
 }
-.status-archived {
-  background: #eeecf8;
-  color: #5b52a3;
+
+.save-state .status-pill {
+  margin-right: 6px;
+  padding: 1px 10px;
+  font-size: 12px;
 }
 
 /* =========================
@@ -1066,18 +1095,9 @@ input {
   font-weight: 700;
 }
 
-.chart-published {
-  background: var(--chart-published);
-}
-.chart-draft {
-  background: var(--chart-draft);
-}
-.chart-archived {
-  background: var(--chart-archived);
-}
-.chart-single {
-  background: var(--chart-published);
-}
+.chart-published { background: var(--chart-published); }
+.chart-archived { background: var(--chart-archived); }
+.chart-single { background: var(--chart-published); }
 
 /* Hover (or keyboard focus) label above a bar segment */
 .chart-segment[data-tip]:hover::after,

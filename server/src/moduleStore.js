@@ -2,7 +2,9 @@
 import { query, transaction } from "./db.js";
 
 export const LEVELS = ["beginner", "intermediate", "projects"];
-export const STATUSES = ["draft", "published", "archived"];
+// published = students see it, locked.  archived = hidden, editable (new modules start here).
+// Archive and Unarchive switch between the two.
+export const STATUSES = ["published", "archived"];
 export const STEP_TYPES = ["instruction", "arduino", "test"];
 
 // 8-4-4-4-12 hex digits, e.g. 62d47c9c-fff2-45dd-bf90-89333cf5dbe8
@@ -23,7 +25,8 @@ export async function getModule(id, { publishedOnly = false } = {}) {
     query(
       `SELECT id, title, level, status, short_description AS "shortDescription",
               description, objective, duration_minutes AS "durationMinutes",
-              cover_image_url AS "coverImageUrl", updated_at AS "updatedAt"
+              cover_image_url AS "coverImageUrl", created_by AS "createdBy",
+              updated_at AS "updatedAt"
        FROM modules
        WHERE id = $1 AND (NOT $2::boolean OR status = 'published')`,
       [id, publishedOnly],
@@ -66,7 +69,6 @@ export function validateModule(input) {
   const module = {
     title: text(m.title),
     level: m.level,
-    status: m.status ?? "draft",
     shortDescription: text(m.shortDescription),
     description: text(m.description),
     objective: text(m.objective),
@@ -96,7 +98,6 @@ export function validateModule(input) {
   if (!module.title) errors.push("Title is required.");
   if (module.title.length > 200) errors.push("Title must be 200 characters or less.");
   if (!LEVELS.includes(module.level)) errors.push(`Level must be one of: ${LEVELS.join(", ")}.`);
-  if (!STATUSES.includes(module.status)) errors.push(`Status must be one of: ${STATUSES.join(", ")}.`);
   if (!isWholeNumber(module.durationMinutes, 1, 600)) {
     errors.push("Duration must be a whole number of minutes from 1 to 600.");
   }
@@ -119,9 +120,9 @@ export function validateModule(input) {
 // ---- Saving ----
 
 // The module's own columns, in the order the INSERT and UPDATE below use them.
+// The status is not here: it only changes through PATCH /api/admin/modules/:id/status.
 const moduleValues = (m) => [
-  m.title, m.level, m.status, m.shortDescription, m.description, m.objective, m.durationMinutes,
-  m.coverImageUrl,
+  m.title, m.level, m.shortDescription, m.description, m.objective, m.durationMinutes, m.coverImageUrl,
 ];
 
 // [{ name: "LED" }, { name: "Wire" }] -> ["LED", "Wire"]
@@ -154,32 +155,39 @@ async function saveContents(db, moduleId, { components, steps }) {
   );
 }
 
-// Creates a module with its components and steps. Returns the new id.
-export function createModule(m) {
+// Creates a module (archived: hidden and editable) with its components and steps. Returns the new id.
+// createdBy: the name of the staff member who added it.
+export function createModule(m, createdBy) {
   return transaction(async (db) => {
     const { rows } = await db.query(
       `INSERT INTO modules
-         (title, level, status, short_description, description, objective, duration_minutes,
-          cover_image_url, sort_order)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8,
+         (title, level, short_description, description, objective, duration_minutes,
+          cover_image_url, created_by, status, sort_order)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'archived',
                (SELECT COALESCE(MAX(sort_order) + 1, 0) FROM modules WHERE level = $2))
        RETURNING id`,
-      moduleValues(m),
+      [...moduleValues(m), createdBy],
     );
     await saveContents(db, rows[0].id, m);
     return rows[0].id;
   });
 }
 
-// Replaces a module's details, components and steps. Returns false if the module doesn't exist.
+// The module's status, or null if there is no module with this id.
+export async function getStatus(id) {
+  const { rows } = await query("SELECT status FROM modules WHERE id = $1", [id]);
+  return rows[0]?.status ?? null;
+}
+
+// Replaces a module's details, components and steps.
+// Returns false if there is no archived module with this id (missing, or published = locked).
 export function updateModule(id, m) {
   return transaction(async (db) => {
     const { rowCount } = await db.query(
       `UPDATE modules
-       SET title = $2, level = $3, status = $4, short_description = $5,
-           description = $6, objective = $7, duration_minutes = $8, cover_image_url = $9,
-           updated_at = now()
-       WHERE id = $1`,
+       SET title = $2, level = $3, short_description = $4, description = $5, objective = $6,
+           duration_minutes = $7, cover_image_url = $8, updated_at = now()
+       WHERE id = $1 AND status = 'archived'`,
       [id, ...moduleValues(m)],
     );
     if (rowCount === 0) return false;

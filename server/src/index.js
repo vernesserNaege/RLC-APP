@@ -29,14 +29,24 @@ const allowedOrigins = (process.env.CLIENT_ORIGIN || "http://localhost:5173")
 app.use(cors({ origin: allowedOrigins, credentials: true }));
 app.use(express.json({ limit: "1mb" }));
 
-// Health check: used by the hosting service, and later by the Pi to test the connection.
-app.get("/api/health", async (req, res) => {
+// Health check for Render (and later the Pi). It is outside /api, so the website never forwards
+// it: only the hosting service, calling the server directly, uses it.
+app.get("/healthz", async (req, res) => {
   try {
     await query("SELECT 1");
-    res.json({ ok: true, database: "connected" });
+    res.json({ ok: true });
   } catch {
-    res.status(503).json({ ok: false, database: "unreachable" });
+    res.status(503).json({ ok: false });
   }
+});
+
+// Every request from the RLC app carries the header X-RLC-App: 1 (see client/src/api/client.ts).
+// An /api address typed into the browser's address bar doesn't, so it gets "Not found".
+// This only hides the API from casual visitors; the real protection is the login check
+// on every staff route, which stays in place.
+app.use("/api", (req, res, next) => {
+  if (req.headers["x-rlc-app"] === "1") return next(); // header names arrive in lowercase
+  res.status(404).json({ error: "Not found" });
 });
 
 // Uploaded files kept on this computer (Phase 2). Their names are random and never reused,
